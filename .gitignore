@@ -1,0 +1,24 @@
+# Pre-built VM archives are distributed via GitHub Releases, never committed.
+# The legacy image is ~1.8 GB, far above GitHub's 100 MB per-file limit.
+*.zip
+*.vhd
+*.vhdx
+*.vmcx
+*.vmgs
+*.VMRS
+*.iso
+
+# Local deployment artifacts (default -VMPath is C:\TwingateConnectors, but
+# these guard against a run pointed at the repo directory)
+ssh_key
+ssh_key.pub
+ssh_user.txt
+images/
+tools/
+
+# Editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
