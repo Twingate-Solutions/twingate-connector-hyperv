@@ -34,7 +34,7 @@ Creates Twingate Connectors end-to-end — Twingate API connector records, Ubunt
 | Parameter | Required | Default | Description |
 |---|---|---|---|
 | `-Action` | Yes | — | `Deploy`, `Remove`, `UpdateConnector`, `UpdateOS`, `List`, or `FixVM` |
-| `-TwingateNetwork` | Most actions | prompted | Your Twingate network slug (e.g. `acme` for `acme.twingate.com`) |
+| `-TwingateNetwork` | Most actions | prompted | Your Twingate network — the part of your Admin Console URL before `.twingate.com`. For `acme.twingate.com` use `acme`; for a shard-based URL like `acme.us1.twingate.com` use `acme.us1`. Copy it from the console rather than assuming a single label. |
 | `-ApiToken` | Most actions | prompted | API token. Accepts plain string or SecureString. |
 | `-RemoteNetwork` | Deploy, Remove | prompted | Remote Network display name from the Admin Console |
 | `-ConnectorCount` | Deploy only | `2` | Number of connectors (and VMs) to create |

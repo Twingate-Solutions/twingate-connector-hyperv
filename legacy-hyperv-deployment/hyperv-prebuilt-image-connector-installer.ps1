@@ -11,8 +11,9 @@
 ##         Set Variables         ##
 ###################################
 
-# Set your network name below.  This is the subdomain part of your log in to the website, ie if you
-# log in at https://companyname.twingate.com then your network name is companyname
+# Set your network name below.  This is the part of your Admin Console URL before .twingate.com.
+# If you log in at https://companyname.twingate.com then your network name is "companyname";
+# for a shard-based URL like https://companyname.us1.twingate.com it is "companyname.us1".
 $networkName = "companyname"  # Your Twingate network name
 
 # Copy and paste the Access Token from the Connector deployment screen in the Admin Console below, it'll be very long but it's important to do it properly

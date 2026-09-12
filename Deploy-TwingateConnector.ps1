@@ -21,7 +21,9 @@
     - List:             Display all TG-Connector-* VMs and their status.
 
 .PARAMETER TwingateNetwork
-    Your Twingate network slug (e.g., "acme" for acme.twingate.com).
+    Your Twingate network - the part of your Admin Console URL before ".twingate.com".
+    For acme.twingate.com use "acme"; for a shard-based URL like acme.us1.twingate.com use "acme.us1".
+    Copy it from the console rather than assuming a single label.
     Prompted interactively if not provided.
 
 .PARAMETER ApiToken
@@ -1407,7 +1409,7 @@ function Resolve-InteractiveParams {
     )
 
     if ($RequireNetwork -and -not $script:TwingateNetwork) {
-        $script:TwingateNetwork = Read-SecurePrompt -Prompt 'Enter your Twingate network slug (e.g., "acme" for acme.twingate.com)'
+        $script:TwingateNetwork = Read-SecurePrompt -Prompt 'Enter your Twingate network - the part of your Admin Console URL before .twingate.com (e.g. "acme" for acme.twingate.com, or "acme.us1" for acme.us1.twingate.com)'
     }
     if ($RequireToken -and -not $script:ApiToken) {
         $script:ApiToken = Read-SecurePrompt -Prompt 'Enter your Twingate API token' -AsSecureString

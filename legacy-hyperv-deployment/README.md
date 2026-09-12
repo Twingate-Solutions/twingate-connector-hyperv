@@ -34,7 +34,7 @@ For all other cases, use [`Deploy-TwingateConnector.ps1`](../Deploy-TwingateConn
 2. Open `hyperv-prebuilt-image-connector-installer.ps1` and set the three variables at the top:
 
    ```powershell
-   $networkName    = "companyname"   # your Twingate network slug
+   $networkName    = "companyname"   # part of your Admin Console URL before .twingate.com — "acme" for acme.twingate.com, or "acme.us1" for acme.us1.twingate.com
    $accessToken    = "eyJhbG..."     # access token from the Admin Console
    $refreshToken   = "80zwhs..."     # refresh token from the Admin Console
    ```
