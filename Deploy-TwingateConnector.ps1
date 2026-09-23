@@ -131,8 +131,56 @@ $ProgressPreference = 'SilentlyContinue'  # Speeds up Invoke-WebRequest signific
 
 #region Helper Functions
 
+# Release identity used in the Twingate API User-Agent header. Overridable via
+# TWINGATE_DEPLOY_VERSION for CI/dev builds; falls back to the in-file release version.
+$script:ScriptVersion = if ($env:TWINGATE_DEPLOY_VERSION) { $env:TWINGATE_DEPLOY_VERSION } else { '1.0.0' }
+
 # Tracks connector records orphaned by FixVM reprovision, surfaced at end of run.
 $script:OrphanedConnectors = [System.Collections.Generic.List[object]]::new()
+
+function Get-TwingateUserAgent {
+    <#
+    .SYNOPSIS
+        Builds the Twingate API User-Agent string for attribution.
+    .DESCRIPTION
+        Pure function. Product token is the literal 'twingate-connector-hyperv'.
+        Optional attribution pairs (mode, op) are appended as a parenthesised,
+        semicolon-joined comment in fixed order; a null/empty pair is omitted
+        without disturbing the order of the rest, and the comment is omitted
+        entirely when no pairs are present. The HTTP-library token is read from
+        $PSVersionTable.PSVersion at call time, never hardcoded.
+    .PARAMETER Version
+        The script/release version, e.g. '1.0.0'.
+    .PARAMETER Mode
+        The deploy action slug (e.g. 'deploy'). Optional.
+    .PARAMETER Op
+        The API operation slug (e.g. 'connector-create'). Optional.
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Version,
+
+        [Parameter()]
+        [string]$Mode,
+
+        [Parameter()]
+        [string]$Op
+    )
+
+    $pairs = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrEmpty($Mode)) { $pairs.Add("mode=$Mode") }
+    if (-not [string]::IsNullOrEmpty($Op))   { $pairs.Add("op=$Op") }
+
+    $comment = ''
+    if ($pairs.Count -gt 0) {
+        $comment = ' (' + ($pairs -join '; ') + ')'
+    }
+
+    return "twingate-connector-hyperv/$Version$comment PowerShell/$($PSVersionTable.PSVersion)"
+}
 
 function Write-Status {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
@@ -458,13 +506,21 @@ function Invoke-TwingateApi {
         [Parameter(Mandatory)]
         [string]$Query,
         [Parameter()]
-        [hashtable]$Variables = @{}
+        [hashtable]$Variables = @{},
+        [Parameter()]
+        [string]$Operation
     )
 
     $uri         = "https://$Network.twingate.com/api/graphql/"
     $plainToken  = ConvertFrom-SecureStringToPlainText -SecureString $Token
     $body        = @{ query = $Query; variables = $Variables } | ConvertTo-Json -Depth 10 -Compress
     $headers     = @{ 'X-API-KEY' = $plainToken; 'Content-Type' = 'application/json' }
+
+    # Attribution: mode comes from the script-scoped deploy action (may be unset
+    # outside of Main, e.g. in unit tests), op is the per-call-site operation slug.
+    $deployActionVar = Get-Variable -Name DeployAction -Scope Script -ErrorAction SilentlyContinue
+    $mode = if ($deployActionVar -and $deployActionVar.Value) { $deployActionVar.Value.ToString().ToLowerInvariant() } else { $null }
+    $userAgent = Get-TwingateUserAgent -Version $script:ScriptVersion -Mode $mode -Op $Operation
 
     $attempt    = 0
     $maxAttempts = 4
@@ -474,7 +530,7 @@ function Invoke-TwingateApi {
         while ($attempt -lt $maxAttempts) {
             $attempt++
             try {
-                $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -UseBasicParsing
+                $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -UseBasicParsing -UserAgent $userAgent
                 if ($response.PSObject.Properties['errors'] -and $response.errors) {
                     $msg = ($response.errors | ForEach-Object { $_.message }) -join '; '
                     throw "Twingate API GraphQL error: $msg"
@@ -530,7 +586,7 @@ query RemoteNetworkByName($name: String!) {
   }
 }
 '@
-    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ name = $Name }
+    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ name = $Name } -Operation 'network-lookup'
     if ($null -eq $data.remoteNetwork) {
         Write-Status "Remote Network '$Name' not found. Check the name in your Twingate Admin Console." -Type Error
         throw "Remote Network '$Name' not found. Check the name in your Twingate Admin Console."
@@ -569,7 +625,7 @@ mutation ConnectorCreate($remoteNetworkId: ID!, $name: String!, $hasStatusNotifi
         name                          = $ConnectorName
         hasStatusNotificationsEnabled = $true
     }
-    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $mutation -Variables $vars
+    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $mutation -Variables $vars -Operation 'connector-create'
     if (-not $data.connectorCreate.ok) {
         throw "connectorCreate failed: $($data.connectorCreate.error)"
     }
@@ -597,7 +653,7 @@ mutation ConnectorGenerateTokens($connectorId: ID!) {
   }
 }
 '@
-    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $mutation -Variables @{ connectorId = $ConnectorId }
+    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $mutation -Variables @{ connectorId = $ConnectorId } -Operation 'token-create'
     if (-not $data.connectorGenerateTokens.ok) {
         throw "connectorGenerateTokens failed: $($data.connectorGenerateTokens.error)"
     }
@@ -627,7 +683,7 @@ query ConnectorStatus($id: ID!) {
   }
 }
 '@
-    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ id = $ConnectorId }
+    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ id = $ConnectorId } -Operation 'connector-status'
     if ($null -eq $data.connector) {
         return $null
     }
@@ -651,7 +707,7 @@ mutation ConnectorDelete($id: ID!) {
 }
 '@
     try {
-        $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $mutation -Variables @{ id = $ConnectorId }
+        $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $mutation -Variables @{ id = $ConnectorId } -Operation 'connector-delete'
         if (-not $data.connectorDelete.ok) {
             Write-Status "connectorDelete API call failed for $ConnectorId`: $($data.connectorDelete.error). Manual cleanup may be needed in the Admin Console." -Type Warning
             return $false
@@ -756,7 +812,7 @@ query ConnectorRemoteNetwork($id: ID!) {
   }
 }
 '@
-    $data = Invoke-TwingateApi -Network $TwingateNetwork -Token $ApiToken -Query $query -Variables @{ id = $ConnectorId }
+    $data = Invoke-TwingateApi -Network $TwingateNetwork -Token $ApiToken -Query $query -Variables @{ id = $ConnectorId } -Operation 'connector-network'
     if ($null -eq $data.connector -or $null -eq $data.connector.remoteNetwork) {
         throw "Could not resolve Remote Network for connector $ConnectorId."
     }
@@ -786,7 +842,7 @@ query RemoteNetworkConnectors($id: ID!) {
   }
 }
 '@
-    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ id = $RemoteNetworkId }
+    $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ id = $RemoteNetworkId } -Operation 'network-connectors'
     if ($null -eq $data.remoteNetwork -or $null -eq $data.remoteNetwork.connectors) {
         return @()
     }
@@ -1444,7 +1500,7 @@ query ValidateCredentials {
 }
 '@
         Write-Status 'Validating Twingate API credentials...' -Type Action
-        Invoke-TwingateApi -Network $script:TwingateNetwork -Token $script:ApiToken -Query $pingQuery | Out-Null
+        Invoke-TwingateApi -Network $script:TwingateNetwork -Token $script:ApiToken -Query $pingQuery -Operation 'auth-check' | Out-Null
         Write-Status 'API credentials validated.'
     }
 }
@@ -1883,6 +1939,10 @@ function Invoke-ListAction {
 #region Main
 
 function Main {
+    # Set before any Invoke-TwingateApi call fires, so the User-Agent attribution
+    # choke point can read the deploy action as its 'mode' slug.
+    $script:DeployAction = $Action
+
     switch ($Action) {
         'Deploy'          { Invoke-DeployAction }
         'Remove'          { Invoke-RemoveAction }

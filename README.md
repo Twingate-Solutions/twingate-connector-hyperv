@@ -60,6 +60,28 @@ Creates Twingate Connectors end-to-end — Twingate API connector records, Ubunt
 
 **FixVM** — Repairs a single connector VM by name (`-VMName`). Checks whether the connector is already `ALIVE` (no-op), installed but stopped (starts it), or missing entirely (creates a **net-new** connector, runs the bootstrap over SSH, and repoints the VM). When it reprovisions, the VM's previous connector record is left in the Twingate Admin Console and flagged in an "ACTION REQUIRED" notice at the end of the run so you can review/remove it manually.
 
+### API Attribution
+
+Every call this script makes to the Twingate Admin API (`https://<network>.twingate.com/api/graphql/`) sends a deliberate `User-Agent` header, replacing the default HTTP-library UA, so Twingate can attribute API traffic to this tool:
+
+```text
+twingate-connector-hyperv/<version> (mode=<action>; op=<operation>) PowerShell/<psversion>
+```
+
+Example:
+
+```text
+twingate-connector-hyperv/1.0.0 (mode=deploy; op=connector-create) PowerShell/5.1.20348.2849
+```
+
+- `twingate-connector-hyperv` — the tool's slug.
+- `<version>` — from `$script:ScriptVersion` (in-file default `1.0.0`, overridable via the `TWINGATE_DEPLOY_VERSION` environment variable).
+- `mode=` — the `-Action`, lowercased (`deploy`, `remove`, `updateconnector`, `updateos`, `list`, `fixvm`).
+- `op=` — the API operation for that request: `network-lookup`, `connector-create`, `token-create`, `connector-status`, `connector-delete`, `connector-network`, `network-connectors`, `auth-check`.
+- `PowerShell/<psversion>` — the PowerShell runtime version, read at runtime.
+
+Key order (`mode` then `op`) is fixed — downstream log extraction is positional/regex-based, and reordering silently breaks dashboards. A key with no value is omitted; with no keys, the parenthesised comment is dropped entirely. Built by a single function, `Get-TwingateUserAgent`, injected once inside `Invoke-TwingateApi`.
+
 ### Usage Examples
 
 ```powershell

@@ -227,6 +227,53 @@ Describe 'Get-FixVMPlan' {
     }
 }
 
+Describe 'Get-TwingateUserAgent' {
+    It 'produces the exact string for mode and op both present' {
+        $expected = "twingate-connector-hyperv/1.0.0 (mode=deploy; op=connector-create) PowerShell/$($PSVersionTable.PSVersion)"
+        Get-TwingateUserAgent -Version '1.0.0' -Mode 'deploy' -Op 'connector-create' | Should -Be $expected
+    }
+
+    It 'omits mode when only op is supplied, preserving fixed key order' {
+        $result = Get-TwingateUserAgent -Version '1.0.0' -Op 'auth-check'
+        $result | Should -Match '\(op=auth-check\)'
+        $result | Should -Not -Match 'mode='
+    }
+
+    It 'omits op when only mode is supplied, preserving fixed key order' {
+        $result = Get-TwingateUserAgent -Version '1.0.0' -Mode 'list'
+        $result | Should -Match '\(mode=list\)'
+        $result | Should -Not -Match 'op='
+    }
+
+    It 'omits the parenthesised comment entirely when no keys are present' {
+        $result = Get-TwingateUserAgent -Version '1.0.0'
+        $result | Should -Not -Match '\('
+    }
+
+    It 'reads the HTTP-lib token from the runtime PSVersionTable' {
+        $result = Get-TwingateUserAgent -Version '1.0.0' -Mode 'deploy' -Op 'connector-create'
+        $result | Should -Match "PowerShell/$($PSVersionTable.PSVersion)$"
+    }
+}
+
+Describe 'Invoke-TwingateApi User-Agent injection' {
+    It 'forwards a twingate-connector-hyperv User-Agent to Invoke-RestMethod' {
+        Mock Invoke-RestMethod {
+            return [PSCustomObject]@{ data = @{ ok = $true } }
+        }
+
+        $secToken = ConvertTo-SecureString 'tok' -AsPlainText -Force
+        # $script:DeployAction is intentionally left unset here to exercise the
+        # guard path (mode omitted); Main is the only place it gets set at runtime.
+        $result = Invoke-TwingateApi -Network 'acme' -Token $secToken -Query 'query { x }' -Operation 'auth-check'
+
+        $result.ok | Should -Be $true
+        Should -Invoke Invoke-RestMethod -ParameterFilter {
+            $UserAgent -match '^twingate-connector-hyperv/'
+        }
+    }
+}
+
 Describe 'Get-SshErrorHint' {
     It 'maps the apt repo-missing signature to a FixVM hint' {
         $real = 'Reading package lists... E: Unable to locate package twingate-connector'
